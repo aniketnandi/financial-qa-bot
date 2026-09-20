@@ -59,7 +59,7 @@ def get_answer(question: str) -> dict:
     # Build prompt and call Gemini directly
     prompt = PROMPT_TEMPLATE.format(context=context, question=question)
     response = _genai_client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-3.6-flash",
         contents=prompt,
     )
 
