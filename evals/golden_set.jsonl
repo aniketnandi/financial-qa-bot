@@ -1,20 +1,20 @@
-{"id": "L01", "category": "lookup", "question": "What was Tesla's total revenue in 2023?", "expected": {"numeric": {"value": 96773000000, "unit": "usd", "rel_tol": 0.01}}}
-{"id": "L02", "category": "lookup", "question": "What was Tesla's net income in 2023?", "expected": {"numeric": {"value": 14974000000, "unit": "usd", "rel_tol": 0.01}}}
-{"id": "L03", "category": "lookup", "question": "How much did Tesla spend on research and development in 2023?", "expected": {"numeric": {"value": 3969000000, "unit": "usd", "rel_tol": 0.01}}}
-{"id": "L04", "category": "lookup", "question": "What was Tesla's gross profit in 2023?", "expected": {"numeric": {"value": 17660000000, "unit": "usd", "rel_tol": 0.01}}}
-{"id": "L05", "category": "lookup", "question": "What was Tesla's worldwide employee headcount as of December 31, 2023?", "expected": {"numeric": {"value": 140473, "unit": "count", "rel_tol": 0.01}}}
-{"id": "L06", "category": "lookup", "question": "What reportable segments does Tesla disclose in its 2023 10-K?", "expected": {"keywords": ["automotive", "energy generation and storage"]}}
-{"id": "L07", "category": "lookup", "question": "How does Tesla describe the competitive landscape of the automotive market in its 2023 10-K?", "expected": {"keywords": ["competit", "electric"]}}
-{"id": "L08", "category": "lookup", "question": "What was Tesla's income from operations in 2023?", "expected": {"numeric": {"value": 8891000000, "unit": "usd", "rel_tol": 0.01}}}
-{"id": "C01", "category": "calculation", "question": "What was Tesla's year-over-year total revenue growth from 2022 to 2023?", "expected": {"numeric": {"value": 18.80, "unit": "percent", "abs_tol": 0.5}}}
-{"id": "C02", "category": "calculation", "question": "What was Tesla's gross margin in 2023?", "expected": {"numeric": {"value": 18.25, "unit": "percent", "abs_tol": 0.5}}}
-{"id": "C03", "category": "calculation", "question": "What was Tesla's operating margin in 2023?", "expected": {"numeric": {"value": 9.19, "unit": "percent", "abs_tol": 0.5}}}
-{"id": "C04", "category": "calculation", "question": "What was Tesla's net profit margin in 2023?", "expected": {"numeric": {"value": 15.47, "unit": "percent", "abs_tol": 0.5}}}
-{"id": "C05", "category": "calculation", "question": "What percentage of total revenue did Tesla spend on research and development in 2023?", "expected": {"numeric": {"value": 4.10, "unit": "percent", "abs_tol": 0.5}}}
-{"id": "C06", "category": "calculation", "question": "By what percentage did Tesla's net income attributable to common stockholders change from 2022 to 2023?", "expected": {"numeric": {"value": 19.44, "unit": "percent", "abs_tol": 0.5}}}
-{"id": "M01", "category": "multi_hop", "question": "Which of Tesla's reportable segments had the highest revenue in 2023, and how much was it?", "expected": {"keywords": ["automotive"], "numeric": {"value": 90738000000, "unit": "usd", "rel_tol": 0.01}}}
-{"id": "M02", "category": "multi_hop", "question": "Did Tesla's total operating expenses grow faster or slower than its total revenue from 2022 to 2023?", "expected": {"keywords": ["faster"]}}
-{"id": "M03", "category": "multi_hop", "question": "Compare Tesla's gross margin in 2022 and 2023. Did it improve?", "expected": {"numeric": {"value": 25.60, "unit": "percent", "abs_tol": 0.5}}}
+{"id": "L01", "category": "lookup", "question": "What was Tesla's total revenue in 2023?", "expected": {"numeric": {"value": 96773000000, "unit": "usd", "rel_tol": 0.01}}, "evidence": ["96,773"]}
+{"id": "L02", "category": "lookup", "question": "What was Tesla's net income in 2023?", "expected": {"numeric": {"value": 14974000000, "unit": "usd", "rel_tol": 0.01}}, "evidence": ["14,974"]}
+{"id": "L03", "category": "lookup", "question": "How much did Tesla spend on research and development in 2023?", "expected": {"numeric": {"value": 3969000000, "unit": "usd", "rel_tol": 0.01}}, "evidence": ["3,969"]}
+{"id": "L04", "category": "lookup", "question": "What was Tesla's gross profit in 2023?", "expected": {"numeric": {"value": 17660000000, "unit": "usd", "rel_tol": 0.01}}, "evidence": ["17,660"]}
+{"id": "L05", "category": "lookup", "question": "What was Tesla's worldwide employee headcount as of December 31, 2023?", "expected": {"numeric": {"value": 140473, "unit": "count", "rel_tol": 0.01}}, "evidence": ["140,473"]}
+{"id": "L06", "category": "lookup", "question": "What reportable segments does Tesla disclose in its 2023 10-K?", "expected": {"keywords": ["automotive", "energy generation and storage"]}, "evidence": ["energy generation and storage"]}
+{"id": "L07", "category": "lookup", "question": "How does Tesla describe the competitive landscape of the automotive market in its 2023 10-K?", "expected": {"keywords": ["competit", "electric"]}, "evidence": ["competit"]}
+{"id": "L08", "category": "lookup", "question": "What was Tesla's income from operations in 2023?", "expected": {"numeric": {"value": 8891000000, "unit": "usd", "rel_tol": 0.01}}, "evidence": ["8,891"]}
+{"id": "C01", "category": "calculation", "question": "What was Tesla's year-over-year total revenue growth from 2022 to 2023?", "expected": {"numeric": {"value": 18.8, "unit": "percent", "abs_tol": 0.5}}, "evidence": ["96,773", "81,462"]}
+{"id": "C02", "category": "calculation", "question": "What was Tesla's gross margin in 2023?", "expected": {"numeric": {"value": 18.25, "unit": "percent", "abs_tol": 0.5}}, "evidence": ["17,660", "96,773"]}
+{"id": "C03", "category": "calculation", "question": "What was Tesla's operating margin in 2023?", "expected": {"numeric": {"value": 9.19, "unit": "percent", "abs_tol": 0.5}}, "evidence": ["8,891", "96,773"]}
+{"id": "C04", "category": "calculation", "question": "What was Tesla's net profit margin in 2023?", "expected": {"numeric": {"value": 15.47, "unit": "percent", "abs_tol": 0.5}}, "evidence": ["14,974", "96,773"]}
+{"id": "C05", "category": "calculation", "question": "What percentage of total revenue did Tesla spend on research and development in 2023?", "expected": {"numeric": {"value": 4.1, "unit": "percent", "abs_tol": 0.5}}, "evidence": ["3,969", "96,773"]}
+{"id": "C06", "category": "calculation", "question": "By what percentage did Tesla's net income attributable to common stockholders change from 2022 to 2023?", "expected": {"numeric": {"value": 19.44, "unit": "percent", "abs_tol": 0.5}}, "evidence": ["14,997", "12,556"]}
+{"id": "M01", "category": "multi_hop", "question": "Which of Tesla's reportable segments had the highest revenue in 2023, and how much was it?", "expected": {"keywords": ["automotive"], "numeric": {"value": 90738000000, "unit": "usd", "rel_tol": 0.01}}, "evidence": ["90,738"]}
+{"id": "M02", "category": "multi_hop", "question": "Did Tesla's total operating expenses grow faster or slower than its total revenue from 2022 to 2023?", "expected": {"keywords": ["faster"]}, "evidence": ["8,769", "7,197"]}
+{"id": "M03", "category": "multi_hop", "question": "Compare Tesla's gross margin in 2022 and 2023. Did it improve?", "expected": {"numeric": {"value": 25.6, "unit": "percent", "abs_tol": 0.5}}, "evidence": ["20,853", "17,660"]}
 {"id": "U01", "category": "unanswerable", "question": "What is Tesla's stock price today?", "expected": {}}
 {"id": "U02", "category": "unanswerable", "question": "What total revenue will Tesla report for 2025?", "expected": {}}
 {"id": "U03", "category": "unanswerable", "question": "What was Ford Motor Company's total revenue in 2023?", "expected": {}}
