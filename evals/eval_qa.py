@@ -171,7 +171,9 @@ def main():
                         sources = get_field(body, args.sources_field)
                 except Exception as e:
                     error = str(e)[:300]
-                rate_limited = error and ("429" in error or "RESOURCE_EXHAUSTED" in error or "quota" in error.lower())
+                daily_quota = error and ("RESOURCE_EXHAUSTED" in error or "quota" in error.lower())
+                transient = error and ("503" in error or "UNAVAILABLE" in error)
+                rate_limited = transient or (error and "429" in error and not daily_quota)
                 if not rate_limited or attempt == args.retries:
                     break
                 m = re.search(r"retry in ([\d.]+)s", error, re.IGNORECASE) or re.search(r"retryDelay.{0,5}?(\d+)s", error)
@@ -196,14 +198,20 @@ def main():
 
     # Summary
     lines = ["# Q&A Bot Eval Summary", "",
-             f"Golden set: {len(items)} questions ({len(skipped)} skipped as unfilled)", ""]
+             f"Golden set: {len(items)} questions ({len(skipped)} skipped as unfilled)",
+             "Scores count only answered questions; ERR = API error (quota/outage), not a wrong answer. Rerun with --resume to fill them in.", ""]
     cats = sorted({r["category"] for r in rows})
     header = "| Endpoint | Overall | " + " | ".join(cats) + " | p50 latency | p95 latency |"
     lines += [header, "|" + "---|" * (len(cats) + 4)]
     for name in endpoints:
         rs = [r for r in rows if r["endpoint"] == name]
         def rate(sub):
-            return f"{sum(r['passed'] for r in sub)}/{len(sub)} ({100*sum(r['passed'] for r in sub)/len(sub):.0f}%)" if sub else "-"
+            ans = [r for r in sub if not r["error"]]
+            if not ans:
+                return f"- ({len(sub)} ERR)" if sub else "-"
+            p = sum(r["passed"] for r in ans)
+            errs = len(sub) - len(ans)
+            return f"{p}/{len(ans)} ({100*p/len(ans):.0f}%)" + (f" +{errs} ERR" if errs else "")
         lats = sorted(r["latency_s"] for r in rs if not r["error"]) or [0]
         p95 = lats[min(len(lats) - 1, int(round(0.95 * (len(lats) - 1))))]
         cells = [rate([r for r in rs if r["category"] == c]) for c in cats]
@@ -217,7 +225,8 @@ def main():
             lines.append(f"- **[{r['endpoint']}] {r['id']}** ({why}): {r['question']}")
             lines.append(f"  - Answer: {r['answer'][:300]!r}")
     (out / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print("\n" + "\n".join(lines[4:6 + len(endpoints)]))
+    h = next(n for n, l in enumerate(lines) if l.startswith("| Endpoint"))
+    print("\n" + "\n".join(lines[h:h + 2 + len(endpoints)]))
     print(f"\nWrote {out/'results.jsonl'} and {out/'summary.md'}")
 
 
