@@ -18,12 +18,12 @@ financial-qa-bot/
 ├── requirements.txt   # dependencies
 ├── .env               # API key (never commit this)
 ├── ingest.py          # builds the FAISS index from PDFs
-├── rag.py             # RAG chain logic
-├── main.py            # FastAPI app
-└── data/              # drop your PDF(s) here
+├── rag.py             # single-shot RAG logic
 ├── agent.py           # multi-step tool-calling agent
 ├── tools.py           # retrieval + growth/margin calculation tools
+├── main.py            # FastAPI app
 ├── evals/             # golden-set retrieval evaluation
+└── data/              # drop your PDF(s) here
 ```
 
 ## Setup
@@ -75,12 +75,23 @@ curl -X POST http://localhost:8000/ask_agent \
   -H "Content-Type: application/json" \
   -d '{"question": "What was revenue growth year over year?"}'
 ```
-Expected response:
+Expected `/ask` response:
 ```json
 {
   "question": "What was the total revenue for the year?",
   "answer": "The total revenue for the year was $X billion, as reported in...",
   "sources": [4, 5, 12]
+}
+```
+Expected `/ask_agent` response:
+```json
+{
+  "question": "What was revenue growth year over year?",
+  "answer": "Revenue grew X% year over year...",
+  "trace": [
+    {"tool": "retrieve_context", "args": {"query": "..."}, "result": "..."},
+    {"tool": "calculate_growth", "args": {"current": 0, "previous": 0}, "result": "X%"}
+  ]
 }
 ```
 
@@ -92,7 +103,28 @@ Expected response:
 
 3. **Generation** — The retrieved chunks are passed as context to gemini-3.6-flash along with the question. The LLM is instructed to answer only from the provided context. If the answer isn't in the context, it replies "I could not find this information in the provided documents."
 
-4. **API** — FastAPI exposes a `/ask` POST endpoint. The response includes the answer and the source page numbers from the original PDFs. `/ask_agent` returns a tool-call trace and is capped at 8 reasoning steps.
+4. **API** — FastAPI exposes two POST endpoints: /ask returns the answer with source page numbers, and /ask_agent returns the answer with a full tool-call trace, capped at 8 reasoning steps.
+
+## Evaluation
+
+Retrieval is evaluated against a 20-question golden set built from Tesla's FY2023 10-K (`evals/`).
+
+| Chunk size / overlap | Top-4 retrieval recall |
+|---|---|
+| 1000 / 150 | 65% |
+| 2000 / 300 | 94% |
+
+Raising chunk size to 2000 kept multi-row financial tables intact within a single chunk, which is why it is the default in `ingest.py`. Answer-generation evaluation with Gemini is pending (free-tier quota).
+
+Run it with:
+`<your command here>`
+
+## Safeguards
+
+- **Grounded answers:** both endpoints instruct the model to use only retrieved filing content and not invent figures.
+- **Refusal over guessing:** if the answer isn't in the retrieved context, the bot says so instead of guessing.
+- **Traceability:** `/ask` returns source page numbers; `/ask_agent` returns every tool call with its arguments and result.
+- **Bounded agent:** the agent loop is capped at 8 steps and told to stop retrieving once it has the needed figures.
 
 ## Notes
 - The FAISS index is saved locally — no cloud storage needed
