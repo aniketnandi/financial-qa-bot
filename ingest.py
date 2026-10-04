@@ -1,7 +1,7 @@
 """
 ingest.py
 Loads all PDFs from the data/ folder, splits them into chunks,
-generates embeddings via Gemini, and saves a FAISS index to disk.
+embeds them with HuggingFace all-MiniLM-L6-v2, and saves a FAISS index to disk.
 Run this once before starting the API.
 """
 
@@ -9,9 +9,6 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# Must be set before importing langchain_google_genai
-os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY", "")
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -47,8 +44,8 @@ def ingest():
     chunks = splitter.split_documents(documents)
     print(f"Split into {len(chunks)} chunks.")
 
-    # 3. Embed using Gemini and build FAISS index
-    print("Generating embeddings via Gemini... (this may take a moment)")
+    # 3. Embed with HuggingFace and build FAISS index
+    print("Generating embeddings with all-MiniLM-L6-v2... (this may take a moment)")
     embeddings = HuggingFaceEmbeddings(
         model_name="all-MiniLM-L6-v2"
     )

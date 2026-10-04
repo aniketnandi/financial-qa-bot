@@ -12,14 +12,13 @@ Uses the same Gemini client/model as rag.py (via google-genai), just with
 tools attached and a multi-step loop instead of one prompt-and-answer call.
 """
 
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from google import genai
 from google.genai import types
 from tools import retrieve_context, calculate_growth, calculate_margin
+from rag import get_client, MODEL, NO_ANSWER
 
 SYSTEM_INSTRUCTION = """You are a financial analysis agent. You have access to tools:
 - retrieve_context: pull relevant passages from the ingested financial filings
@@ -93,14 +92,14 @@ def run_agent(question: str) -> dict:
     call made along the way (name, args, result) - useful both for debugging
     and for demonstrating the agent's reasoning steps.
     """
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    client = get_client()
 
     contents = [types.Content(role="user", parts=[types.Part(text=question)])]
     trace = []
 
     for _ in range(MAX_STEPS):
         response = client.models.generate_content(
-            model="gemini-3.6-flash",
+            model=MODEL,
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
@@ -114,7 +113,7 @@ def run_agent(question: str) -> dict:
         ]
 
         if not function_calls:
-            return {"answer": response.text, "trace": trace}
+            return {"answer": response.text or NO_ANSWER, "trace": trace}
 
         # Record the model's turn (its tool-call requests) in the conversation
         contents.append(candidate.content)
@@ -122,10 +121,17 @@ def run_agent(question: str) -> dict:
         # Execute each requested tool call and feed the results back to the model
         function_response_parts = []
         for fc in function_calls:
+            args = dict(fc.args or {})
             fn = TOOL_FUNCTIONS.get(fc.name)
-            result = fn(**fc.args) if fn else f"Unknown tool: {fc.name}"
+            if fn is None:
+                result = f"Unknown tool: {fc.name}"
+            else:
+                try:
+                    result = fn(**args)
+                except Exception as e:
+                    result = f"Tool error: {type(e).__name__}: {e}"
 
-            trace.append({"tool": fc.name, "args": dict(fc.args), "result": result})
+            trace.append({"tool": fc.name, "args": args, "result": result})
             function_response_parts.append(
                 types.Part.from_function_response(
                     name=fc.name,

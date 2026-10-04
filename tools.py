@@ -5,22 +5,17 @@ Defines the tools available to the financial agent:
     - calculate_growth(current, previous): % growth between two values
     - calculate_margin(profit, revenue): profit margin as a % of revenue
 
-retrieve_context reuses load_retriever() from rag.py, so it's the same FAISS
+retrieve_context reuses get_retriever() from rag.py, so it's the same FAISS
 index and embeddings your RAG pipeline already builds via ingest.py - no
 duplicate retrieval logic.
 """
 
-from rag import load_retriever
-
-_retriever = None
+from rag import get_retriever
 
 
 def retrieve_context(query: str) -> str:
     """Retrieve the most relevant chunks from the ingested financial filings for a given query."""
-    global _retriever
-    if _retriever is None:
-        _retriever = load_retriever()
-    docs = _retriever.invoke(query)
+    docs = get_retriever().invoke(query)
     return "\n\n".join(
         f"[page {d.metadata.get('page', 'unknown')}] {d.page_content}" for d in docs
     )

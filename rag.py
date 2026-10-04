@@ -16,6 +16,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from google import genai
 
 INDEX_DIR = "faiss_index"
+MODEL = "gemini-3.6-flash"
+NO_ANSWER = "The model returned no answer for this question."
 
 PROMPT_TEMPLATE = """You are a financial document assistant. Use only the context below to answer the question.
 If the answer is not in the context, say "I could not find this information in the provided documents."
@@ -28,7 +30,6 @@ Question:
 
 Answer:"""
 
-# Load once at module import
 _retriever = None
 _genai_client = None
 
@@ -43,32 +44,35 @@ def load_retriever():
     return vectorstore.as_retriever(search_kwargs={"k": 4})
 
 
-def get_answer(question: str) -> dict:
-    global _retriever, _genai_client
-
+def get_retriever():
+    """Load the FAISS retriever once and reuse it (shared with tools.py)."""
+    global _retriever
     if _retriever is None:
         _retriever = load_retriever()
+    return _retriever
 
+
+def get_client():
+    """Create the Gemini client once and reuse it (shared with agent.py)."""
+    global _genai_client
     if _genai_client is None:
         _genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    return _genai_client
 
-    # Retrieve relevant chunks
-    source_docs = _retriever.invoke(question)
+
+def get_answer(question: str) -> dict:
+    source_docs = get_retriever().invoke(question)
     context = "\n\n".join(doc.page_content for doc in source_docs)
 
-    # Build prompt and call Gemini directly
     prompt = PROMPT_TEMPLATE.format(context=context, question=question)
-    response = _genai_client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt,
+    response = get_client().models.generate_content(model=MODEL, contents=prompt)
+
+    sources = sorted(
+        {doc.metadata.get("page", "unknown") for doc in source_docs},
+        key=lambda p: (isinstance(p, str), p),
     )
 
-    sources = sorted(list(set(
-        doc.metadata.get("page", "unknown")
-        for doc in source_docs
-    )))
-
     return {
-        "answer": response.text,
+        "answer": response.text or NO_ANSWER,
         "sources": sources,
     }

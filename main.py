@@ -11,6 +11,27 @@ from pydantic import BaseModel
 from rag import get_answer
 from agent import run_agent
 import os
+import logging
+from google.genai import errors as genai_errors
+
+logger = logging.getLogger("financial_qa")
+logging.basicConfig(level=logging.INFO)
+
+
+def upstream_error(e: genai_errors.APIError) -> HTTPException:
+    """Translate a Gemini API error into a meaningful HTTP response."""
+    logger.warning("Gemini API error %s: %s", e.code, e.message)
+    if e.code == 429:
+        return HTTPException(
+            status_code=429,
+            detail="Model provider rate limit or quota exceeded. Try again later.",
+        )
+    if e.code and e.code >= 500:
+        return HTTPException(
+            status_code=503,
+            detail="Model provider temporarily unavailable. Try again shortly.",
+        )
+    return HTTPException(status_code=502, detail="Upstream model request failed.")
 
 app = FastAPI(
     title="Financial Document Q&A Bot",
@@ -58,8 +79,11 @@ def ask_question(request: QuestionRequest):
             answer=result["answer"],
             sources=result["sources"],
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except genai_errors.APIError as e:
+        raise upstream_error(e)
+    except Exception:
+        logger.exception("Unhandled error in /ask")
+        raise HTTPException(status_code=500, detail="Internal server error.")
 
 
 @app.post("/ask_agent", response_model=AgentAnswerResponse)
@@ -84,5 +108,8 @@ def ask_agent_question(request: QuestionRequest):
             answer=result["answer"],
             trace=result["trace"],
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except genai_errors.APIError as e:
+        raise upstream_error(e)
+    except Exception:
+        logger.exception("Unhandled error in /ask_agent")
+        raise HTTPException(status_code=500, detail="Internal server error.")
