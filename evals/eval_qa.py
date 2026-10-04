@@ -119,7 +119,7 @@ def main():
     ap.add_argument("--timeout", type=float, default=120)
     ap.add_argument("--sleep", type=float, default=0,
                     help="seconds to wait between requests (avoids Gemini free-tier 429s)")
-    ap.add_argument("--retries", type=int, default=3, help="retries on 429 / quota errors")
+    ap.add_argument("--retries", type=int, default=3, help="retries on transient 503 errors (429 quota errors are not retried)")
     ap.add_argument("--backoff", type=float, default=30, help="base wait (s) between rate-limit retries")
     ap.add_argument("--resume", action="store_true",
                     help="keep finished (non-ERR) results in --out and only rerun missing/ERR items")
