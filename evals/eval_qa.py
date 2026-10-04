@@ -153,9 +153,9 @@ def main():
         for item in items:
             if (name, item["id"]) in done:
                 continue
-            t0 = time.perf_counter()
             answer, sources, error = "", None, None
             for attempt in range(args.retries + 1):
+                t0 = time.perf_counter()
                 error = None
                 try:
                     r = requests.post(url, json={args.question_field: item["question"]}, timeout=args.timeout)

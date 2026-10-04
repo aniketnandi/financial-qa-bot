@@ -28,13 +28,16 @@ financial-qa-bot/
 
 ## Setup
 
-### 1. Clone and open in IntelliJ
-Open the project folder in IntelliJ. Make sure the Python plugin is installed and a Python 3.9+ interpreter is configured.
+### 1. Clone and create a virtual environment
+```bash
+     python -m venv .venv
+     .venv\Scripts\activate      # Windows
+     source .venv/bin/activate   # macOS/Linux
+```
 
 ### 2. Install dependencies
-Open the IntelliJ terminal (Alt+F12) and run:
 ```bash
-pip install -r requirements.txt
+     pip install -r requirements.txt
 ```
 
 ### 3. Add your Gemini API key
@@ -97,7 +100,7 @@ Expected `/ask_agent` response:
 
 ## How it works
 
-1. **Ingestion** — PDFs are loaded page by page, split into 2000-character chunks with 300-character overlap, and embedded using HuggingFace all-MiniLM-L6-v2 model. The vectors are stored in a local FAISS index and the chunk size was chosen from the eval.
+1. **Ingestion** — PDFs are loaded page by page, split into 2000-character chunks with 300-character overlap, and embedded using the HuggingFace all-MiniLM-L6-v2 model. The vectors are stored in a local FAISS index and the chunk size was chosen from the eval.
 
 2. **Retrieval** — At query time, the question is embedded using the same model. FAISS finds the 4 most similar chunks by nearest-neighbor search (L2 distance).
 
