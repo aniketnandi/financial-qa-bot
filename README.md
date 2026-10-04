@@ -22,7 +22,7 @@ financial-qa-bot/
 ├── agent.py           # multi-step tool-calling agent
 ├── tools.py           # retrieval + growth/margin calculation tools
 ├── main.py            # FastAPI app
-├── evals/             # golden-set retrieval evaluation
+├── evals/             # golden-set retrieval and answer evals
 └── data/              # drop your PDF(s) here
 ```
 
@@ -114,10 +114,19 @@ Retrieval is evaluated against a 20-question golden set built from Tesla's FY202
 | 1000 / 150 | 65% |
 | 2000 / 300 | 94% |
 
-Raising chunk size to 2000 kept multi-row financial tables intact within a single chunk, which is why it is the default in `ingest.py`. Answer-generation evaluation with Gemini is pending (free-tier quota).
+Raising chunk size to 2000 kept multi-row financial tables intact within a single chunk, which is why it is the default in `ingest.py`. Answer evaluation is in progress (Gemini free-tier quota); see `evals/README.md`.
 
-Run it with:
-`<your command here>`
+Run the retrieval eval from the project root (no server or API key needed):
+```bash
+python evals/retrieval_eval.py --k 4 8 --diagnose
+```
+
+To run the answer eval, start the API first, then:
+```bash
+python evals/eval_qa.py --endpoint rag=/ask --endpoint agent=/ask_agent --golden evals/golden_set.jsonl --out evals/results --retries 2 --resume
+```
+
+See [`evals/README.md`](evals/README.md) for flags, scoring rules, and full results.
 
 ## Safeguards
 

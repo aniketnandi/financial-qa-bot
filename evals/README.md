@@ -1,10 +1,13 @@
-# Eval harness for the Financial Document Q&A Bot
+# Evals for the Financial Document Q&A Bot
 
-Scores the bot against a golden set of questions with known answers, so you can report accuracy (and compare the single-shot RAG endpoint against the tool-calling agent) instead of eyeballing outputs.
+Two evals, both driven by the same golden set:
 
-## 1. Golden set
+1. **Retrieval eval** (`retrieval_eval.py`): does FAISS retrieval surface the 10-K evidence needed to answer each question? Runs locally, **no Gemini calls**.
+2. **Answer eval** (`eval_qa.py`): does each API endpoint (`/ask` single-shot RAG, `/ask_agent` tool-calling agent) return the correct answer?
 
-`golden_set.jsonl` holds 20 questions over Tesla's FY2023 10-K (`data/tsla-20231231-gen.pdf`), with expected answers taken from the filing itself (Consolidated Statements of Operations, segment note, and Human Capital section):
+## Golden set
+
+  `golden_set.jsonl` holds 20 questions over Tesla's FY2023 10-K (`data/tsla-20231231-gen.pdf`). Expected answers and evidence strings were taken from the filing itself (Consolidated Statements of Operations, segment note, Human Capital section), not from the bot.
 
 | Category | Count | What it tests |
 |---|---|---|
@@ -13,37 +16,60 @@ Scores the bot against a golden set of questions with known answers, so you can 
 | `multi_hop` | 3 | Combining figures across years or the segment note |
 | `unanswerable` | 3 | Declining questions the filing can't answer (live stock price, future revenue, another company) |
 
-To add questions, copy a line and change it. Dollar values are full dollars (10-K tables are "in millions"), percentages are in points.
+  Each answerable item also has an `evidence` list: the exact strings from the 10-K needed to answer it (e.g. `"96,773"`, 2023 revenue in millions).
 
-## 2. Run it
+## Run the retrieval eval
 
-Start the FastAPI app, then:
+From the project root (where `faiss_index/` lives). No API key or server needed:
 
 ```bash
-pip install requests
-python eval_qa.py --base-url http://localhost:8000 \
-    --endpoint rag=/ask --endpoint agent=/ask_agent \
-    --golden golden_set.jsonl --out results --sleep 4
+python evals/retrieval_eval.py --k 4 8 --diagnose
 ```
 
-Adjust to match your API:
-- `--endpoint name=/path`: one per endpoint you want to compare (use your real routes).
-- `--question-field`: request JSON key (default `question`).
-- `--answer-field` / `--sources-field`: response keys; dot paths work, e.g. `data.answer`.
+- `--k`: one or more top-k values to compare (the API uses k=4).
+- `--diagnose`: for each miss, reports whether the evidence exists anywhere in the index and the rank of the best chunk containing it.
+- Output: `evals/results_retrieval/summary.md` (use `--out` to write elsewhere).
 
-## 3. Read the results
+## Run the answer eval
 
-- `results/summary.md`: pass rate per endpoint and category, p50/p95 latency, and every failure with the bot's answer.
-- `results/results.jsonl`: per-question detail.
+Start the API (`uvicorn main:app`), then from the project root in a second terminal:
 
-Scoring rules: numbers pass within ±1% (dollars/counts) or ±0.5 percentage points (percents); keyword checks are case-insensitive; unanswerable items pass only if the bot declines.
+```bash
+python evals/eval_qa.py --endpoint rag=/ask --endpoint agent=/ask_agent --golden evals/golden_set.jsonl --out evals/results --retries 2 --resume
+```
 
-**Check the failures by hand before you trust the number.** A "fail" can be a scoring miss (e.g. the bot said "$394 billion" when you set a tight tolerance) rather than a wrong answer. Fix the golden item or tolerance if so, then rerun.
+Useful flags:
+- `--endpoint name=/path`: one per endpoint to compare.
+- `--ids C01,C02`: run only specific questions.
+- `--resume`: keep finished results in `--out` and rerun only missing or errored items.
+- `--retries` / `--backoff`: retry transient `503 UNAVAILABLE` errors (daily-quota `429`s are not retried).
+- `--sleep`: pause between requests.
 
-## 4. Use it
+**Gemini free-tier note:** the free tier allows a small number of requests per model per day, and the agent makes several Gemini calls per question. Run endpoints separately (e.g. `--endpoint rag=/ask --out evals/results_rag`), and use `--resume` across days to fill in errored items.
 
-Once you have real numbers, a resume bullet can look like:
+## Scoring
 
-> Built an eval harness with a 20-question golden set (lookups, margin/growth calculations, unanswerable prompts); the tool-calling agent scored X% vs. Y% for single-shot RAG on calculation questions
+- Numbers pass within ±1% (dollars, counts) or ±0.5 percentage points (percents).
+- Keyword checks are case-insensitive.
+- Unanswerable items pass only if the bot declines.
+- Scores count only answered questions; `ERR` (quota or outage) is reported separately, not as a wrong answer.
 
-Only use the numbers your run actually produced.
+Failures are reviewed by hand: a fail can be a scoring miss rather than a wrong answer.
+
+## Results
+
+### Retrieval (17 answerable questions)
+
+| Chunking (size / overlap) | Recall @ k=4 | Recall @ k=8 |
+|---|---|---|
+| 1000 / 150 (original) | 11/17 (65%) | 12/17 (71%) |
+| 2000 / 300 (current) | 16/17 (94%) | 17/17 (100%) |
+
+Diagnosis of the original misses: every missing figure was in the index, but income-statement rows (operating income, operating expenses) landed in a chunk of bare table numbers that ranked 129th to 315th of 564 chunks, beyond any reasonable k. Larger chunks kept the table together.
+
+### Answers (in progress, current index)
+
+- `rag` (`/ask`): 10/12 answered questions correct so far, 8 pending (API quota). Both failures were refusals ("I could not find this information") on questions where retrieval *did* surface the evidence: net profit margin (needs a calculation) and reportable segments.
+- `agent` (`/ask_agent`): pending.
+
+Raw outputs: `results_retrieval/`, `results_retrieval_2000/`, `results_rag/`.
