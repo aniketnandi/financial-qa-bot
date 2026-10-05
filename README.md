@@ -22,6 +22,7 @@ financial-qa-bot/
 ├── agent.py           # multi-step tool-calling agent
 ├── tools.py           # retrieval + growth/margin calculation tools
 ├── main.py            # FastAPI app
+├── mcp_server.py      # MCP server exposing the bot as tools
 ├── evals/             # golden-set retrieval and answer evals
 └── data/              # drop your PDF(s) here
 ```
@@ -107,6 +108,21 @@ Expected `/ask_agent` response:
 3. **Generation** — The retrieved chunks are passed as context to gemini-3.6-flash along with the question. The LLM is instructed to answer only from the provided context. If the answer isn't in the context, it replies "I could not find this information in the provided documents."
 
 4. **API** — FastAPI exposes two POST endpoints: /ask returns the answer with source page numbers, and /ask_agent returns the answer with a full tool-call trace, capped at 8 reasoning steps.
+
+## MCP server
+
+`mcp_server.py` exposes the bot over the Model Context Protocol, so MCP clients (Claude Desktop, Claude Code, Cursor) can use the filings as tools:
+
+| Tool | What it does | Gemini calls |
+|---|---|---|
+| `search_filings(query, k)` | Top-k passages with page numbers | none |
+| `ask_filings(question)` | Single-shot RAG answer + source pages | 1 |
+| `analyze_filings(question)` | Multi-step agent answer + tool-call trace | several |
+
+Test it in the MCP Inspector (requires Node.js), with Command `.venv\Scripts\python.exe` and Arguments `mcp_server.py`:
+```bash
+npx @modelcontextprotocol/inspector
+```
 
 ## Evaluation
 
