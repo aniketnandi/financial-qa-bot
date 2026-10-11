@@ -37,6 +37,7 @@ REFUSAL_PHRASES = ["not found", "not available", "not mentioned", "not provided"
 def extract_numbers(text):
     """Return list of (value, kind) where kind is 'percent' or 'amount'."""
     out = []
+    text = text.replace("\\%", "%")  # LaTeX-formatted answers, e.g. \mathbf{15.47\%}
     for raw, unit in NUM_RE.findall(text):
         neg = raw.startswith("-") or ("(" in raw and ")" in raw)
         clean = re.sub(r"[^\d.]", "", raw)
@@ -123,6 +124,8 @@ def main():
     ap.add_argument("--backoff", type=float, default=30, help="base wait (s) between rate-limit retries")
     ap.add_argument("--resume", action="store_true",
                     help="keep finished (non-ERR) results in --out and only rerun missing/ERR items")
+    ap.add_argument("--rescore", action="store_true",
+                    help="re-score saved answers in --out with the current checks; makes no API calls")
     ap.add_argument("--ids", default="", help="comma-separated item ids to run (e.g. L01,C02)")
     args = ap.parse_args()
 
@@ -147,6 +150,15 @@ def main():
                 if not r.get("error") and r["endpoint"] in endpoints:
                     rows.append(r); done.add((r["endpoint"], r["id"]))
         print(f"Resuming: keeping {len(rows)} finished results, rerunning the rest")
+    if args.rescore:
+        by_id = {i["id"]: i for i in items}
+        rows = [json.loads(l) for l in (out / "results.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
+        rows = [r for r in rows if r["endpoint"] in endpoints and r["id"] in by_id]
+        for r in rows:
+            if not r["error"]:
+                r["checks"], r["passed"] = score(by_id[r["id"]], r["answer"], None)
+        done = {(r["endpoint"], r["id"]) for r in rows}
+        print(f"Re-scored {len(rows)} saved results")
 
     for name, path in endpoints.items():
         url = args.base_url.rstrip("/") + path

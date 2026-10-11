@@ -1,11 +1,22 @@
-langchain==0.2.16
-langchain-google-genai==1.0.10
-langchain-community==0.2.16
-faiss-cpu==1.9.0.post1
-pypdf==4.3.1
-fastapi==0.142.2
-uvicorn==0.30.6
-python-dotenv==1.0.1
-pydantic==2.8.2
-mcp[cli]>=2,<3
-starlette==1.7.0
+# Retrieval and ingestion
+langchain-community==0.4.2
+langchain-text-splitters==1.1.3
+langchain-huggingface==1.2.3
+sentence-transformers==6.1.0
+faiss-cpu==1.15.1
+rank-bm25==0.2.2
+pypdf==6.20.0
+
+# Generation
+google-genai==2.29.0
+
+# API and MCP server
+fastapi==0.143.0
+uvicorn==0.54.0
+pydantic==2.14.0
+mcp[cli]==2.3.0
+python-dotenv==1.2.4
+
+# Evals and tests
+requests==2.34.2
+httpx==0.28.1
