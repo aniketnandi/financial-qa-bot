@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/aniketnandi/financial-qa-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/aniketnandi/financial-qa-bot/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 This project answers natural-language questions about SEC filings (10-Ks) and shows where each answer came from. It has two answering modes:
 
