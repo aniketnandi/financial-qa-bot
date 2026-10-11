@@ -2,8 +2,9 @@
 rag.py
 Loads the FAISS index from disk and exposes a single function:
     get_answer(question: str) -> dict
-Uses HuggingFace embeddings for retrieval and calls Gemini API
-directly via google-genai SDK for generation.
+Retrieves with retrieval.py (dense FAISS search over all-MiniLM-L6-v2
+embeddings, k=4) and calls the Gemini API directly via the google-genai SDK
+for generation.
 """
 
 import os
@@ -11,11 +12,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
 from google import genai
 
-INDEX_DIR = "faiss_index"
+from retrieval import Retriever, load_store
+
 MODEL = "gemini-3.6-flash"
 NO_ANSWER = "The model returned no answer for this question."
 
@@ -34,14 +34,14 @@ _retriever = None
 _genai_client = None
 
 
+# Dense retrieval scored best in the retrieval eval (94% recall@4 vs 76% for
+# hybrid), so it is the default; see evals/README.md.
+RETRIEVAL_MODE = "dense"
+TOP_K = 4
+
+
 def load_retriever():
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectorstore = FAISS.load_local(
-        INDEX_DIR,
-        embeddings,
-        allow_dangerous_deserialization=True,
-    )
-    return vectorstore.as_retriever(search_kwargs={"k": 4})
+    return Retriever(load_store(), mode=RETRIEVAL_MODE, k=TOP_K)
 
 
 def get_retriever():

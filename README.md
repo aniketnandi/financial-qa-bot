@@ -1,117 +1,106 @@
 # Financial Document Q&A Bot
 
-A RAG pipeline and tool-calling agent that answer natural-language questions over financial PDF filings (e.g. SEC 10-Ks). Built with LangChain, HuggingFace embeddings, FAISS, Gemini API, and FastAPI.
+[![CI](https://github.com/aniketnandi/financial-qa-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/aniketnandi/financial-qa-bot/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+
+This project answers natural-language questions about SEC filings (10-Ks) and shows where each answer came from. It has two answering modes:
+
+- **`/ask`**: single-shot RAG. Retrieve 4 chunks, then answer with page citations.
+- **`/ask_agent`**: a Gemini function-calling agent. It plans its own retrieval and calculation steps (growth %, margin %) and returns a full tool-call trace.
+
+Both modes are served as a **FastAPI** service and as an **MCP server**, so they can be used from Claude Desktop, Claude Code or Cursor. A golden-set **eval harness** measures retrieval and answer quality.
+
+**Stack:** Python · LangChain · FAISS · HuggingFace `all-MiniLM-L6-v2` · BM25 · Gemini API (`google-genai`) · FastAPI · MCP
+
+## Results at a glance
+
+These results come from a hand-built 20-question golden set over Tesla's FY2023 10-K. It has lookups, calculations, multi-hop questions and questions the filing can't answer. See [`evals/`](evals/README.md).
+
+| What was measured | Result |
+|---|---|
+| Retrieval recall@4 with 1000-char chunks (baseline) | 65% |
+| Retrieval recall@4 with **2000-char chunks** (current) | **94%** (100% @ k=8) |
+| Hybrid dense + BM25 (RRF) recall@4 | 76%: tested and rejected for this corpus |
+| `/ask` RAG answer accuracy | **16/20 (80%)**, 3/3 unanswerable questions correctly refused |
+| `/ask_agent` on calculation + multi-hop questions | **6/6 answered correctly**, 3 still pending because of free-tier API quota |
+
+**What the evals showed:**
+
+- **Chunk size beat clever retrieval.** At 1000 characters, income-statement rows were split away from their labels and ranked 129th to 315th of 564 chunks. At 2000 characters, each table stayed in one chunk.
+- **BM25 hurt.** 10-K tables repeat the same figures across many pages, so keyword matching ranked the wrong pages highly. The hybrid retriever is still in `retrieval.py` for comparison, but the API uses dense retrieval.
+- **The agent addresses RAG's main failure mode.** Most of RAG's misses were refusals on margin questions where the evidence *was* retrieved but needed arithmetic. The agent's calculator tools answer every one of those questions it has been scored on.
 
 ## Architecture
 
 ```
-PDF files → PyPDF loader → text chunker → HuggingFace embeddings → FAISS index
-                                                                         ↓
-/ask:       question → embeddings → FAISS top-4 chunks → Gemini → answer + source pages
-/ask_agent: question → Gemini agent ⇄ tools (retrieve_context, calculate_growth, calculate_margin) → answer + tool-call trace
+                 ingest.py
+PDFs ──► PyPDF ──► 2000/300 chunker ──► MiniLM embeddings ──► FAISS index
+                                                                 │
+                                                       retrieval.py (dense | bm25 | hybrid)
+                                                                 │
+              ┌──────────────────────────────────────────────────┼───────────────────────┐
+              ▼                                                  ▼                       ▼
+  rag.py  /ask                                       agent.py  /ask_agent         mcp_server.py
+  top-4 chunks → Gemini → answer + pages     Gemini ⇄ tools (retrieve_context,    search / ask / analyze
+                                             calculate_growth, calculate_margin)  tools for MCP clients
+                                             ≤ 8 steps → answer + trace
 ```
 
-## Project Structure
+| File | Purpose |
+|---|---|
+| `ingest.py` | Builds the FAISS index from `data/*.pdf` (chunk size, overlap and output directory are configurable) |
+| `retrieval.py` | Dense, BM25 and reciprocal-rank-fusion retrievers. The API, agent, MCP server and eval all share this code |
+| `rag.py` | Single-shot grounded answer with source pages |
+| `agent.py` / `tools.py` | Multi-step function-calling loop and its tools |
+| `main.py` | FastAPI app. Maps Gemini errors to 429/503/502 |
+| `mcp_server.py` | MCP server exposing the same capabilities |
+| `evals/` | Golden set, retrieval eval (no LLM calls) and answer eval |
+| `tests/` | Unit tests for tools, retrieval fusion and API validation |
 
-```
-financial-qa-bot/
-├── requirements.txt   # dependencies
-├── .env               # API key (never commit this)
-├── ingest.py          # builds the FAISS index from PDFs
-├── rag.py             # single-shot RAG logic
-├── agent.py           # multi-step tool-calling agent
-├── tools.py           # retrieval + growth/margin calculation tools
-├── main.py            # FastAPI app
-├── mcp_server.py      # MCP server exposing the bot as tools
-├── evals/             # golden-set retrieval and answer evals
-└── data/              # drop your PDF(s) here
-```
+## Quickstart
 
-## Setup
+Requires Python 3.11+ and a free [Gemini API key](https://aistudio.google.com).
 
-### 1. Clone and create a virtual environment
 ```bash
-     python -m venv .venv
-     .venv\Scripts\activate      # Windows
-     source .venv/bin/activate   # macOS/Linux
-```
+git clone https://github.com/aniketnandi/financial-qa-bot.git
+cd financial-qa-bot
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 
-### 2. Install dependencies
-```bash
-     pip install -r requirements.txt
-```
-
-### 3. Add your Gemini API key
-Edit `.env` and replace the placeholder:
-```
-GEMINI_API_KEY=your_actual_key_here
-```
-Get a free key at: https://aistudio.google.com
-
-### 4. Add PDF files
-Create a `data/` folder in the project root and drop one or more financial PDFs into it.
-Any annual report, 10-K filing, earnings document, or financial statement works.
-You can download free sample PDFs from SEC EDGAR: https://www.sec.gov/cgi-bin/browse-edgar
-
-### 5. Run ingestion
-```bash
-python ingest.py
-```
-This loads the PDFs, splits them into chunks, generates embeddings, and saves the FAISS index to `faiss_index/`. Run this once, or re-run whenever you add new PDFs.
-
-### 6. Start the API
-```bash
+cp .env.example .env               # then add your GEMINI_API_KEY
+python ingest.py                   # indexes the Tesla 10-K in data/ (≈1 min on CPU)
 uvicorn main:app --reload
 ```
-The API will be available at http://localhost:8000
 
-### 7. Test it
-Open http://localhost:8000/docs in your browser — FastAPI auto-generates an interactive Swagger UI.
+Open http://localhost:8000/docs for the interactive Swagger UI, or use curl:
 
-Or use curl:
-```bash
-curl -X POST http://localhost:8000/ask \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What was the total revenue for the year?"}'
-```
 ```bash
 curl -X POST http://localhost:8000/ask_agent \
   -H "Content-Type: application/json" \
-  -d '{"question": "What was revenue growth year over year?"}'
+  -d '{"question": "What was Tesla'\''s year-over-year revenue growth from 2022 to 2023?"}'
 ```
-Expected `/ask` response:
+
+Example response (abridged):
+
 ```json
 {
-  "question": "What was the total revenue for the year?",
-  "answer": "The total revenue for the year was $X billion, as reported in...",
-  "sources": [4, 5, 12]
-}
-```
-Expected `/ask_agent` response:
-```json
-{
-  "question": "What was revenue growth year over year?",
-  "answer": "Revenue grew X% year over year...",
+  "question": "What was Tesla's year-over-year revenue growth from 2022 to 2023?",
+  "answer": "Tesla's total revenue grew 18.80%, from $81,462M in 2022 to $96,773M in 2023.",
   "trace": [
-    {"tool": "retrieve_context", "args": {"query": "..."}, "result": "..."},
-    {"tool": "calculate_growth", "args": {"current": 0, "previous": 0}, "result": "X%"}
+    {"tool": "retrieve_context", "args": {"query": "total revenues 2023 2022"}, "result": "[page 50] ..."},
+    {"tool": "calculate_growth", "args": {"current": 96773, "previous": 81462}, "result": "18.80%"}
   ]
 }
 ```
 
-## How it works
+`/ask` returns `{"question", "answer", "sources": [page numbers]}`.
 
-1. **Ingestion** — PDFs are loaded page by page, split into 2000-character chunks with 300-character overlap, and embedded using the HuggingFace all-MiniLM-L6-v2 model. The vectors are stored in a local FAISS index and the chunk size was chosen from the eval.
-
-2. **Retrieval** — At query time, the question is embedded using the same model. FAISS finds the 4 most similar chunks by nearest-neighbor search (L2 distance).
-
-3. **Generation** — The retrieved chunks are passed as context to gemini-3.6-flash along with the question. The LLM is instructed to answer only from the provided context. If the answer isn't in the context, it replies "I could not find this information in the provided documents."
-
-4. **API** — FastAPI exposes two POST endpoints: /ask returns the answer with source page numbers, and /ask_agent returns the answer with a full tool-call trace, capped at 8 reasoning steps.
+To use your own filings, drop any 10-K or annual-report PDFs into `data/` (free from [SEC EDGAR](https://www.sec.gov/edgar/search/)) and re-run `python ingest.py`.
 
 ## MCP server
 
-`mcp_server.py` exposes the bot over the Model Context Protocol, so MCP clients (Claude Desktop, Claude Code, Cursor) can use the filings as tools:
+`mcp_server.py` lets MCP clients (Claude Desktop, Claude Code, Cursor) query the filings directly:
 
 | Tool | What it does | Gemini calls |
 |---|---|---|
@@ -119,44 +108,38 @@ Expected `/ask_agent` response:
 | `ask_filings(question)` | Single-shot RAG answer + source pages | 1 |
 | `analyze_filings(question)` | Multi-step agent answer + tool-call trace | several |
 
-Test it in the MCP Inspector (requires Node.js), with Command `.venv\Scripts\python.exe` and Arguments `mcp_server.py`:
-```bash
-npx @modelcontextprotocol/inspector
-```
+Register it with your client using the command `python mcp_server.py` (stdio transport), or try it in the MCP Inspector with `npx @modelcontextprotocol/inspector`.
 
 ## Evaluation
 
-Retrieval is evaluated against a 20-question golden set built from Tesla's FY2023 10-K (`evals/`).
-
-| Chunk size / overlap | Top-4 retrieval recall |
-|---|---|
-| 1000 / 150 | 65% |
-| 2000 / 300 | 94% |
-
-Raising chunk size to 2000 kept multi-row financial tables intact within a single chunk, which is why it is the default in `ingest.py`. Answer evaluation is in progress (Gemini free-tier quota); see `evals/README.md`.
-
-Run the retrieval eval from the project root (no server or API key needed):
 ```bash
-python evals/retrieval_eval.py --k 4 8 --diagnose
+# Retrieval only: no server or API key needed
+python evals/retrieval_eval.py --retriever dense bm25 hybrid --k 4 8 --diagnose
+
+# End-to-end answers (start the API first)
+python evals/eval_qa.py --endpoint rag=/ask --endpoint agent=/ask_agent \
+  --golden evals/golden_set.jsonl --out evals/results --retries 2 --resume
 ```
 
-To run the answer eval, start the API first, then:
-```bash
-python evals/eval_qa.py --endpoint rag=/ask --endpoint agent=/ask_agent --golden evals/golden_set.jsonl --out evals/results --retries 2 --resume
-```
+Answers are scored with deterministic checks (numbers within ±1%, required keywords, refusal detection), not an LLM judge. API errors are reported separately from wrong answers. See [`evals/README.md`](evals/README.md) for the methodology and the full per-question results.
 
-See [`evals/README.md`](evals/README.md) for flags, scoring rules, and full results.
+## Tests
+
+```bash
+pip install pytest
+pytest
+```
 
 ## Safeguards
 
-- **Grounded answers:** both endpoints instruct the model to use only retrieved filing content and not invent figures.
-- **Refusal over guessing:** if the answer isn't in the retrieved context, the bot says so instead of guessing.
-- **Traceability:** `/ask` returns source page numbers; `/ask_agent` returns every tool call with its arguments and result.
-- **Bounded agent:** the agent loop is capped at 8 steps and told to stop retrieving once it has the needed figures.
+- **Grounded answers:** both modes are told to use only retrieved filing content and never invent figures.
+- **Refusal over guessing:** unanswerable questions get an explicit "could not find" answer (3/3 in the eval).
+- **Traceability:** `/ask` cites pages, and `/ask_agent` returns every tool call with its arguments and result.
+- **Bounded agent:** the agent stops after 8 steps, and tool exceptions are fed back to the model instead of crashing the request.
+- **Clean errors:** upstream rate limits and outages come back as 429/503 instead of an opaque 500.
 
-## Notes
-- The FAISS index is saved locally — no cloud storage needed
-- `.env` is gitignored — never commit your API key
-- Re-run `ingest.py` any time you add new PDFs to `data/`
-  
-### Note: This project uses the Gemini API (free tier). If you hit a 429 RESOURCE_EXHAUSTED error, your daily quota is exhausted, wait 24 hours or add billing to your Google AI Studio account.
+## Limitations and next steps
+
+- The eval covers one filing and 20 questions. The next step is to extend it to several companies and years.
+- The agent eval is incomplete because of Gemini free-tier quota. A 429 means the daily quota is used up.
+- Possible next steps: a cross-encoder reranker, and table-aware chunking so the system doesn't depend on chunk size alone.

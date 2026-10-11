@@ -4,4 +4,6 @@ __pycache__/
 *.pyc
 .idea/
 venv/
-*.iml
+*.iml.venv/
+faiss_index_*/
+.pytest_cache/

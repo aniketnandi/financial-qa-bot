@@ -41,8 +41,7 @@ def search_filings(query: str, k: int = 4) -> list[dict]:
     matching passages with their page numbers. Does not call an LLM, so use it
     to look up exact figures and quote them."""
     k = max(1, min(int(k), 20))
-    retriever = get_retriever()
-    docs = retriever.vectorstore.similarity_search(query, k=k)  # same FAISS index as /ask
+    docs = get_retriever().search(query, k=k)  # same retriever as /ask
     return [
         {
             "page": d.metadata.get("page"),

@@ -9,6 +9,7 @@ FastAPI application exposing:
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from rag import get_answer
+from retrieval import INDEX_DIR
 from agent import run_agent
 import os
 import logging
@@ -66,7 +67,7 @@ def ask_question(request: QuestionRequest):
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    if not os.path.exists("faiss_index"):
+    if not os.path.exists(INDEX_DIR):
         raise HTTPException(
             status_code=503,
             detail="FAISS index not found. Run ingest.py first."
@@ -95,7 +96,7 @@ def ask_agent_question(request: QuestionRequest):
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    if not os.path.exists("faiss_index"):
+    if not os.path.exists(INDEX_DIR):
         raise HTTPException(
             status_code=503,
             detail="FAISS index not found. Run ingest.py first."

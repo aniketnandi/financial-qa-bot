@@ -44,6 +44,7 @@ Useful flags:
 - `--resume`: keep finished results in `--out` and rerun only missing or errored items.
 - `--retries` / `--backoff`: retry transient `503 UNAVAILABLE` errors (daily-quota `429`s are not retried).
 - `--sleep`: pause between requests.
+- `--rescore`: re-score the saved answers in `--out` with the current checks, without calling the API.
 
 **Gemini free-tier note:** the free tier allows a small number of requests per model per day, and the agent makes several Gemini calls per question. Run endpoints separately (e.g. `--endpoint rag=/ask --out evals/results_rag`), and use `--resume` across days to fill in errored items.
 
@@ -67,9 +68,24 @@ Failures are reviewed by hand: a fail can be a scoring miss rather than a wrong 
 
 Diagnosis of the original misses: every missing figure was in the index, but income-statement rows (operating income, operating expenses) landed in a chunk of bare table numbers that ranked 129th to 315th of 564 chunks, beyond any reasonable k. Larger chunks kept the table together.
 
-### Answers (in progress, current index)
+### Retrieval: dense vs. BM25 vs. hybrid (2000 / 300 index)
 
-- `rag` (`/ask`): 10/12 answered questions correct so far, 8 pending (API quota). Both failures were refusals ("I could not find this information") on questions where retrieval *did* surface the evidence: net profit margin (needs a calculation) and reportable segments.
-- `agent` (`/ask_agent`): pending.
+| Retriever | Recall @ k=4 | Recall @ k=8 |
+|---|---|---|
+| dense (FAISS, used by the API) | 16/17 (94%) | 17/17 (100%) |
+| bm25 | 9/17 (53%) | 11/17 (65%) |
+| hybrid (RRF) | 13/17 (76%) | 16/17 (94%) |
 
-Raw outputs: `results_retrieval/`, `results_retrieval_2000/`, `results_rag/`.
+BM25 underperforms because key figures such as `96,773` appear in 4 different chunks (MD&A, the income statement, segment notes), so keyword matching often ranks the wrong page first. Fusing it with dense retrieval brings that noise into the dense ranking.
+
+### Answers (current index)
+
+| Endpoint | Overall | lookup | calculation | multi_hop | unanswerable |
+|---|---|---|---|---|---|
+| `rag` (`/ask`) | 16/20 (80%) | 7/8 | 4/6 | 2/3 | 3/3 |
+| `agent` (`/ask_agent`), calc + multi-hop only | 6/6 answered (100%), 3 pending | | 5/5 | 1/1 | |
+
+- `rag`: 3 of 4 failures were refusals ("I could not find this information") where retrieval *did* surface the evidence but the answer needed arithmetic (gross margin, net margin) or a segment table. These are the cases the agent's calculator tools target.
+- `agent`: answered every scored calculation and multi-hop question correctly, including both margin questions that RAG refused. C04 was first scored as a fail: the answer was correct (15.47%) but formatted in LaTeX (`15.47\%`), which the number parser missed. The parser was fixed and the saved answers re-scored with `--rescore` (no API calls). 3 items are pending because of the free-tier quota.
+
+Raw outputs: `results_retrieval/` (dense, 2000/300), `results_retrieval_hybrid/` (retriever comparison), `results_rag/`, `results_agent/`. The 1000/150 baseline can be reproduced with `python ingest.py --chunk-size 1000 --chunk-overlap 150 --index-dir faiss_index_1000`, then `python evals/retrieval_eval.py --index faiss_index_1000 --k 4 8`.
