@@ -31,6 +31,53 @@ These results come from a hand-built 20-question golden set over Tesla's FY2023 
 - **BM25 hurt.** 10-K tables repeat the same figures across many pages, so keyword matching ranked the wrong pages highly. The hybrid retriever is still in `retrieval.py` for comparison, but the API uses dense retrieval.
 - **The agent addresses RAG's main failure mode.** Most of RAG's misses were refusals on margin questions where the evidence *was* retrieved but needed arithmetic. The agent's calculator tools answer every one of those questions it has been scored on.
 
+## See it in action
+
+These are real outputs from the bot over Tesla's FY2023 10-K, copied from the saved eval runs in [`evals/results_rag/`](evals/results_rag/results.jsonl) and [`evals/results_agent/`](evals/results_agent/results.jsonl). The wording is unchanged. Only the formatting was flattened to fit the README: the model's LaTeX math was written out as plain text, and nested lists were collapsed onto one line.
+
+### Same question, two modes
+
+**Q: What was Tesla's net profit margin in 2023?**
+
+**`/ask` (single-shot RAG)** retrieved the right income-statement rows, but the margin isn't printed in the filing, so it declined instead of guessing:
+
+> I could not find this information in the provided documents.
+
+**`/ask_agent` (tool-calling agent)** retrieved the same figures, then called `calculate_margin`:
+
+> According to Tesla's Consolidated Statements of Operations in its 2023 Form 10-K, the financial results for the year ended December 31, 2023 were:
+>
+> * **Total Revenues:** $96,773 million
+> * **Net Income:** $14,974 million
+> * **Net Income Attributable to Common Stockholders:** $14,997 million
+>
+> **Net Profit Margin Calculations:**
+> * **Based on Total Net Income:** $14,974 million / $96,773 million × 100 = **15.47%**
+> * **Based on Net Income Attributable to Common Stockholders:** $14,997 million / $96,773 million × 100 = **15.50%**
+
+This gap is the reason the agent exists: two of RAG's four eval misses were cases where the numbers were in the retrieved context but the answer needed arithmetic.
+
+### Multi-step reasoning across years
+
+**Q: Did Tesla's total operating expenses grow faster or slower than its total revenue from 2022 to 2023?** (`/ask_agent`)
+
+> From 2022 to 2023, Tesla's **total operating expenses grew faster than its total revenue**.
+>
+> 1. **Total Revenue:** 2022: $81,462 million · 2023: $96,773 million · Growth Rate: **18.80%**
+> 2. **Total Operating Expenses:** 2022: $7,197 million · 2023: $8,769 million · Growth Rate: **21.84%**
+>
+> With total operating expenses growing at **21.84%** compared to total revenue growth of **18.80%**, Tesla's operating expenses grew **faster** than its total revenue over this period.
+
+### Refusing questions the filing can't answer
+
+| Question (`/ask`) | Answer |
+|---|---|
+| What is Tesla's stock price today? | I could not find this information in the provided documents. |
+| What total revenue will Tesla report for 2025? | I could not find this information in the provided documents. |
+| What was Ford Motor Company's total revenue in 2023? | I could not find this information in the provided documents. |
+
+All of these figures match the 10-K: revenue $96,773M (2022: $81,462M), net income $14,974M, operating expenses $8,769M (2022: $7,197M).
+
 ## Architecture
 
 ```
@@ -82,7 +129,7 @@ curl -X POST http://localhost:8000/ask_agent \
   -d '{"question": "What was Tesla'\''s year-over-year revenue growth from 2022 to 2023?"}'
 ```
 
-Example response (abridged):
+Response format (illustrative values; the `/ask_agent` response includes the full tool-call trace):
 
 ```json
 {
