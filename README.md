@@ -15,21 +15,24 @@ Both modes are served as a **FastAPI** service and as an **MCP server**, so they
 
 ## Results at a glance
 
-These results come from a hand-built 20-question golden set over Tesla's FY2023 10-K. It has lookups, calculations, multi-hop questions and questions the filing can't answer. The answer results below were measured with the Gemini backend. See [`evals/`](evals/README.md).
+These results come from a hand-built 20-question golden set over Tesla's FY2023 10-K. It has lookups, calculations, multi-hop questions and questions the filing can't answer. Answer accuracy was measured on both LLM backends, and every answer was reviewed by hand. See [`evals/`](evals/README.md).
 
 | What was measured | Result |
 |---|---|
 | Retrieval recall@4 with 1000-char chunks (baseline) | 65% |
 | Retrieval recall@4 with **2000-char chunks** (current) | **94%** (100% @ k=8) |
 | Hybrid dense + BM25 (RRF) recall@4 | 76%: tested and rejected for this corpus |
-| `/ask` RAG answer accuracy | **16/20 (80%)**, 3/3 unanswerable questions correctly refused |
-| `/ask_agent` on calculation + multi-hop questions | **6/6 answered correctly**, 3 still pending because of free-tier API quota |
+| `/ask` RAG, **Azure OpenAI `gpt-4.1-mini`** (deployed on Azure Container Apps) | **18/20 (90%)**, 3/3 unanswerable refused, p50 latency 1.9 s |
+| `/ask_agent`, **Azure OpenAI `gpt-4.1-mini`** (deployed) | **18/20 (90%)** after manual review, 3/3 unanswerable refused, p50 latency 2.5 s |
+| `/ask` RAG, Gemini `gemini-3.6-flash` (free tier) | 16/20 (80%), 3/3 unanswerable refused |
+| `/ask_agent`, Gemini (free tier) | 6/6 on calculation + multi-hop questions; the rest were not run because of the daily quota |
 
 **What the evals showed:**
 
 - **Chunk size beat clever retrieval.** At 1000 characters, income-statement rows were split away from their labels and ranked 129th to 315th of 564 chunks. At 2000 characters, each table stayed in one chunk.
 - **BM25 hurt.** 10-K tables repeat the same figures across many pages, so keyword matching ranked the wrong pages highly. The hybrid retriever is still in `retrieval.py` for comparison, but the API uses dense retrieval.
-- **The agent addresses RAG's main failure mode.** Most of RAG's misses were refusals on margin questions where the evidence *was* retrieved but needed arithmetic. The agent's calculator tools answer every one of those questions it has been scored on.
+- **The agent addresses RAG's main failure mode.** With Gemini, two of RAG's four misses were refusals on margin questions where the evidence *was* retrieved but needed arithmetic. The agent's calculator tools answered both. With `gpt-4.1-mini`, RAG does that arithmetic itself, and the agent's edge is on the segment questions (L06, M01) that RAG still misses.
+- **Auto-scores need human review.** Reviewing the Azure agent run by hand found two correct refusals the scorer had missed (scorer fixed) and two answers that passed but were wrong: one used the wrong net-income line, and one contradicted itself. Those two are counted as failures in the 18/20.
 
 ## See it in action
 
@@ -157,6 +160,8 @@ The API can run on **Azure Container Apps** with **Azure OpenAI** as the LLM:
 - Container Apps pulls the image and scales from 0 to 1 replicas.
 - The Azure OpenAI key and the API key are stored as Container Apps secrets.
 
+The live deployment runs in Canada Central and calls a `gpt-4.1-mini` deployment in France Central, which is where the student subscription had model quota. Its health check is public: [`/`](https://financial-qa-bot.politemeadow-88700c0d.canadacentral.azurecontainerapps.io/). The question endpoints need an API key, to protect the credits. The first request after an idle period takes 30–60 s while a replica starts.
+
 Set `LLM_PROVIDER=azure_openai` to use the same backend locally. For step-by-step Cloud Shell commands, cost controls and troubleshooting, see [`docs/DEPLOY_AZURE.md`](docs/DEPLOY_AZURE.md).
 
 ## MCP server
@@ -203,5 +208,6 @@ pytest
 ## Limitations and next steps
 
 - The eval covers one filing and 20 questions. The next step is to extend it to several companies and years.
-- The agent eval is incomplete because of Gemini free-tier quota. A 429 means the daily quota is used up.
+- The Gemini agent eval is incomplete because of the free-tier daily quota (a 429 means it is used up). The Azure run covers all 20 questions.
+- Two of the agent's errors (a wrong financial line item, and a self-contradicting sentence) passed the deterministic scorer. Catching them automatically would need line-item-aware expected values or a consistency check.
 - Possible next steps: a cross-encoder reranker, and table-aware chunking so the system doesn't depend on chunk size alone.
