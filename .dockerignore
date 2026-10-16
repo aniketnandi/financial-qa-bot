@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+venv
+.env
+.idea
+*.iml
+__pycache__
+.pytest_cache
+faiss_index
+faiss_index_*
+evals
+tests

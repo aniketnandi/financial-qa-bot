@@ -44,6 +44,7 @@ Useful flags:
 - `--resume`: keep finished results in `--out` and rerun only missing or errored items.
 - `--retries` / `--backoff`: retry transient `503 UNAVAILABLE` errors (daily-quota `429`s are not retried).
 - `--sleep`: pause between requests.
+- `--base-url` / `--api-key`: run against a deployment, such as the Azure Container App, instead of localhost. The key is sent as `X-API-Key`.
 - `--rescore`: re-score the saved answers in `--out` with the current checks, without calling the API.
 
 **Gemini free-tier note:** the free tier allows a small number of requests per model per day, and the agent makes several Gemini calls per question. Run endpoints separately (e.g. `--endpoint rag=/ask --out evals/results_rag`), and use `--resume` across days to fill in errored items.
