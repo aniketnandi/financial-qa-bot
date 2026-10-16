@@ -7,29 +7,32 @@
 This project answers natural-language questions about SEC filings (10-Ks) and shows where each answer came from. It has two answering modes:
 
 - **`/ask`**: single-shot RAG. Retrieve 4 chunks, then answer with page citations.
-- **`/ask_agent`**: a Gemini function-calling agent. It plans its own retrieval and calculation steps (growth %, margin %) and returns a full tool-call trace.
+- **`/ask_agent`**: a function-calling agent. It plans its own retrieval and calculation steps (growth %, margin %) and returns a full tool-call trace.
 
-Both modes are served as a **FastAPI** service and as an **MCP server**, so they can be used from Claude Desktop, Claude Code or Cursor. A golden-set **eval harness** measures retrieval and answer quality.
+Both modes are served as a **FastAPI** service and as an **MCP server**, so they can be used from Claude Desktop, Claude Code or Cursor. The LLM backend is pluggable: **Gemini** (default) or **Azure OpenAI**, chosen with one environment variable. A Docker image and a guide for deploying to **Azure Container Apps** are included. A golden-set **eval harness** measures retrieval and answer quality.
 
-**Stack:** Python · LangChain · FAISS · HuggingFace `all-MiniLM-L6-v2` · BM25 · Gemini API (`google-genai`) · FastAPI · MCP
+**Stack:** Python · LangChain · FAISS · HuggingFace `all-MiniLM-L6-v2` · BM25 · Gemini API · Azure OpenAI · FastAPI · MCP · Docker · Azure Container Apps · GitHub Actions
 
 ## Results at a glance
 
-These results come from a hand-built 20-question golden set over Tesla's FY2023 10-K. It has lookups, calculations, multi-hop questions and questions the filing can't answer. See [`evals/`](evals/README.md).
+These results come from a hand-built 20-question golden set over Tesla's FY2023 10-K. It has lookups, calculations, multi-hop questions and questions the filing can't answer. Answer accuracy was measured on both LLM backends, and every answer was reviewed by hand. See [`evals/`](evals/README.md).
 
 | What was measured | Result |
 |---|---|
 | Retrieval recall@4 with 1000-char chunks (baseline) | 65% |
 | Retrieval recall@4 with **2000-char chunks** (current) | **94%** (100% @ k=8) |
 | Hybrid dense + BM25 (RRF) recall@4 | 76%: tested and rejected for this corpus |
-| `/ask` RAG answer accuracy | **16/20 (80%)**, 3/3 unanswerable questions correctly refused |
-| `/ask_agent` on calculation + multi-hop questions | **6/6 answered correctly**, 3 still pending because of free-tier API quota |
+| `/ask` RAG, **Azure OpenAI `gpt-4.1-mini`** (deployed on Azure Container Apps) | **18/20 (90%)**, 3/3 unanswerable refused, p50 latency 1.9 s |
+| `/ask_agent`, **Azure OpenAI `gpt-4.1-mini`** (deployed) | **18/20 (90%)** after manual review, 3/3 unanswerable refused, p50 latency 2.5 s |
+| `/ask` RAG, Gemini `gemini-3.6-flash` (free tier) | 16/20 (80%), 3/3 unanswerable refused |
+| `/ask_agent`, Gemini (free tier) | 6/6 on calculation + multi-hop questions; the rest were not run because of the daily quota |
 
 **What the evals showed:**
 
 - **Chunk size beat clever retrieval.** At 1000 characters, income-statement rows were split away from their labels and ranked 129th to 315th of 564 chunks. At 2000 characters, each table stayed in one chunk.
 - **BM25 hurt.** 10-K tables repeat the same figures across many pages, so keyword matching ranked the wrong pages highly. The hybrid retriever is still in `retrieval.py` for comparison, but the API uses dense retrieval.
-- **The agent addresses RAG's main failure mode.** Most of RAG's misses were refusals on margin questions where the evidence *was* retrieved but needed arithmetic. The agent's calculator tools answer every one of those questions it has been scored on.
+- **The agent addresses RAG's main failure mode.** With Gemini, two of RAG's four misses were refusals on margin questions where the evidence *was* retrieved but needed arithmetic. The agent's calculator tools answered both. With `gpt-4.1-mini`, RAG does that arithmetic itself, and the agent's edge is on the segment questions (L06, M01) that RAG still misses.
+- **Auto-scores need human review.** Reviewing the Azure agent run by hand found two correct refusals the scorer had missed (scorer fixed) and two answers that passed but were wrong: one used the wrong net-income line, and one contradicted itself. Those two are counted as failures in the 18/20.
 
 ## See it in action
 
@@ -89,25 +92,28 @@ PDFs ──► PyPDF ──► 2000/300 chunker ──► MiniLM embeddings ─�
               ┌──────────────────────────────────────────────────┼───────────────────────┐
               ▼                                                  ▼                       ▼
   rag.py  /ask                                       agent.py  /ask_agent         mcp_server.py
-  top-4 chunks → Gemini → answer + pages     Gemini ⇄ tools (retrieve_context,    search / ask / analyze
+  top-4 chunks → LLM → answer + pages        LLM ⇄ tools (retrieve_context,       search / ask / analyze
                                              calculate_growth, calculate_margin)  tools for MCP clients
                                              ≤ 8 steps → answer + trace
+                     LLM = llm.py: Gemini (default) | Azure OpenAI
 ```
 
 | File | Purpose |
 |---|---|
 | `ingest.py` | Builds the FAISS index from `data/*.pdf` (chunk size, overlap and output directory are configurable) |
 | `retrieval.py` | Dense, BM25 and reciprocal-rank-fusion retrievers. The API, agent, MCP server and eval all share this code |
+| `llm.py` | Pluggable LLM backend (Gemini or Azure OpenAI), with provider errors normalized for the API |
 | `rag.py` | Single-shot grounded answer with source pages |
-| `agent.py` / `tools.py` | Multi-step function-calling loop and its tools |
-| `main.py` | FastAPI app. Maps Gemini errors to 429/503/502 |
+| `agent.py` / `tools.py` | Multi-step function-calling loop for each provider, and its tools (declared once) |
+| `main.py` | FastAPI app. Maps provider errors to 429/503/502, with an optional API-key check |
 | `mcp_server.py` | MCP server exposing the same capabilities |
 | `evals/` | Golden set, retrieval eval (no LLM calls) and answer eval |
-| `tests/` | Unit tests for tools, retrieval fusion and API validation |
+| `tests/` | Unit tests for tools, retrieval fusion, API validation, and both provider loops (with mocked LLM clients) |
+| `Dockerfile` / `docs/DEPLOY_AZURE.md` | Container image (index and embedding model built in) and the Azure Container Apps deployment guide |
 
 ## Quickstart
 
-Requires Python 3.11+ and a free [Gemini API key](https://aistudio.google.com).
+Requires Python 3.11+ and either a free [Gemini API key](https://aistudio.google.com) or an Azure OpenAI deployment.
 
 ```bash
 git clone https://github.com/aniketnandi/financial-qa-bot.git
@@ -116,7 +122,7 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env               # then add your GEMINI_API_KEY
+cp .env.example .env               # then add your GEMINI_API_KEY (or the Azure OpenAI settings)
 python ingest.py                   # indexes the Tesla 10-K in data/ (≈1 min on CPU)
 uvicorn main:app --reload
 ```
@@ -146,11 +152,23 @@ Response format (illustrative values; the `/ask_agent` response includes the ful
 
 To use your own filings, drop any 10-K or annual-report PDFs into `data/` (free from [SEC EDGAR](https://www.sec.gov/edgar/search/)) and re-run `python ingest.py`.
 
+## Deploy to Azure
+
+The API can run on **Azure Container Apps** with **Azure OpenAI** as the LLM:
+
+- CI builds the Docker image, smoke-tests it and publishes it to GitHub Container Registry.
+- Container Apps pulls the image and scales from 0 to 1 replicas.
+- The Azure OpenAI key and the API key are stored as Container Apps secrets.
+
+The live deployment runs in Canada Central and calls a `gpt-4.1-mini` deployment in France Central, which is where the student subscription had model quota. Its health check is public: [`/`](https://financial-qa-bot.politemeadow-88700c0d.canadacentral.azurecontainerapps.io/). The question endpoints need an API key, to protect the credits. The first request after an idle period takes 30–60 s while a replica starts.
+
+Set `LLM_PROVIDER=azure_openai` to use the same backend locally. For step-by-step Cloud Shell commands, cost controls and troubleshooting, see [`docs/DEPLOY_AZURE.md`](docs/DEPLOY_AZURE.md).
+
 ## MCP server
 
 `mcp_server.py` lets MCP clients (Claude Desktop, Claude Code, Cursor) query the filings directly:
 
-| Tool | What it does | Gemini calls |
+| Tool | What it does | LLM calls |
 |---|---|---|
 | `search_filings(query, k)` | Top-k passages with page numbers | none |
 | `ask_filings(question)` | Single-shot RAG answer + source pages | 1 |
@@ -184,10 +202,12 @@ pytest
 - **Refusal over guessing:** unanswerable questions get an explicit "could not find" answer (3/3 in the eval).
 - **Traceability:** `/ask` cites pages, and `/ask_agent` returns every tool call with its arguments and result.
 - **Bounded agent:** the agent stops after 8 steps, and tool exceptions are fed back to the model instead of crashing the request.
-- **Clean errors:** upstream rate limits and outages come back as 429/503 instead of an opaque 500.
+- **Clean errors:** upstream rate limits and outages come back as 429/503 instead of an opaque 500, for either provider.
+- **Protected deployment:** with `API_KEY` set, the POST endpoints require an `X-API-Key` header, and the keys live in Container Apps secrets.
 
 ## Limitations and next steps
 
 - The eval covers one filing and 20 questions. The next step is to extend it to several companies and years.
-- The agent eval is incomplete because of Gemini free-tier quota. A 429 means the daily quota is used up.
+- The Gemini agent eval is incomplete because of the free-tier daily quota (a 429 means it is used up). The Azure run covers all 20 questions.
+- Two of the agent's errors (a wrong financial line item, and a self-contradicting sentence) passed the deterministic scorer. Catching them automatically would need line-item-aware expected values or a consistency check.
 - Possible next steps: a cross-encoder reranker, and table-aware chunking so the system doesn't depend on chunk size alone.

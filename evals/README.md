@@ -44,6 +44,7 @@ Useful flags:
 - `--resume`: keep finished results in `--out` and rerun only missing or errored items.
 - `--retries` / `--backoff`: retry transient `503 UNAVAILABLE` errors (daily-quota `429`s are not retried).
 - `--sleep`: pause between requests.
+- `--base-url` / `--api-key`: run against a deployment, such as the Azure Container App, instead of localhost. The key is sent as `X-API-Key`.
 - `--rescore`: re-score the saved answers in `--out` with the current checks, without calling the API.
 
 **Gemini free-tier note:** the free tier allows a small number of requests per model per day, and the agent makes several Gemini calls per question. Run endpoints separately (e.g. `--endpoint rag=/ask --out evals/results_rag`), and use `--resume` across days to fill in errored items.
@@ -78,7 +79,7 @@ Diagnosis of the original misses: every missing figure was in the index, but inc
 
 BM25 underperforms because key figures such as `96,773` appear in 4 different chunks (MD&A, the income statement, segment notes), so keyword matching often ranks the wrong page first. Fusing it with dense retrieval brings that noise into the dense ranking.
 
-### Answers (current index)
+### Answers: Gemini (`gemini-3.6-flash`, free tier, run locally)
 
 | Endpoint | Overall | lookup | calculation | multi_hop | unanswerable |
 |---|---|---|---|---|---|
@@ -88,4 +89,25 @@ BM25 underperforms because key figures such as `96,773` appear in 4 different ch
 - `rag`: 3 of 4 failures were refusals ("I could not find this information") where retrieval *did* surface the evidence but the answer needed arithmetic (gross margin, net margin) or a segment table. These are the cases the agent's calculator tools target.
 - `agent`: answered every scored calculation and multi-hop question correctly, including both margin questions that RAG refused. C04 was first scored as a fail: the answer was correct (15.47%) but formatted in LaTeX (`15.47\%`), which the number parser missed. The parser was fixed and the saved answers re-scored with `--rescore` (no API calls). 3 items are pending because of the free-tier quota.
 
-Raw outputs: `results_retrieval/` (dense, 2000/300), `results_retrieval_hybrid/` (retriever comparison), `results_rag/`, `results_agent/`. The 1000/150 baseline can be reproduced with `python ingest.py --chunk-size 1000 --chunk-overlap 150 --index-dir faiss_index_1000`, then `python evals/retrieval_eval.py --index faiss_index_1000 --k 4 8`.
+### Answers: Azure OpenAI (`gpt-4.1-mini`, deployed on Azure Container Apps)
+
+Run from Azure Cloud Shell against the live deployment, all 20 questions per endpoint. Azure has no daily quota, so nothing is pending. Same index, prompts, tools and scorer as the Gemini runs.
+
+| Endpoint | Auto-scored | After manual review | lookup | calculation | multi_hop | unanswerable | p50 / p95 latency |
+|---|---|---|---|---|---|---|---|
+| `rag` (`/ask`) | 18/20 | **18/20 (90%)** | 7/8 | 6/6 | 2/3 | 3/3 | 1.86 s / 3.45 s |
+| `agent` (`/ask_agent`) | 20/20 | **18/20 (90%)** | 8/8 | 5/6 | 2/3 | 3/3 | 2.48 s / 3.64 s |
+
+Manual review of every scored answer:
+
+- **Two scorer misses, now fixed.** Agent U02 and U03 were correct refusals ("I cannot provide…", "…cannot be found in the retrieved financial data") that the first scoring marked as fails, because those phrasings weren't in the refusal list. The phrases were added with a regression test and the saved answers re-scored. Gemini results were unchanged by this.
+- **Two false passes, kept as failures above.** The scorer passes them, but they are wrong:
+  - agent C06 answered 18.96%, the growth of *total* net income, instead of net income *attributable to common stockholders* (19.44%). The gap is within the ±0.5 pp tolerance.
+  - agent M03 has the right figures (25.60% → 18.25%) and concludes the margin decreased, but its first sentence says "improved".
+
+  Tightening the tolerance or adding a contradiction check would catch these, but it would also risk rejecting correct answers. They're documented here instead.
+- **Genuine RAG failures.** L06 refused although the segment note was retrieved. M01 named "Automotive sales $78,509M" (a revenue line) instead of the Automotive segment's $90,738M. The agent got both right.
+
+**Gemini vs Azure OpenAI.** With `gpt-4.1-mini`, single-shot RAG answers the margin questions it previously refused (calculation 6/6 vs 4/6), so the agent's advantage narrows to the segment questions. Latency is also much lower (p50 under 2.5 s vs 7.9 s), but that compares different models and service tiers (paid Azure deployment vs Gemini free tier), not just providers.
+
+Raw outputs: `results_retrieval/` (dense, 2000/300), `results_retrieval_hybrid/` (retriever comparison), `results_rag/`, `results_agent/` (Gemini), `results_azure_rag/`, `results_azure_agent/` (Azure OpenAI). The 1000/150 baseline can be reproduced with `python ingest.py --chunk-size 1000 --chunk-overlap 150 --index-dir faiss_index_1000`, then `python evals/retrieval_eval.py --index faiss_index_1000 --k 4 8`.

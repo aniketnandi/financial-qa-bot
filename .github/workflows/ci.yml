@@ -20,3 +20,40 @@ jobs:
           pip install -r requirements.txt pytest
       - name: Run tests
         run: pytest -q
+
+  docker:
+    # Builds the API image, smoke-tests it, and on main publishes it to
+    # ghcr.io for Azure Container Apps (see docs/DEPLOY_AZURE.md).
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/financial-qa-bot
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t "$IMAGE:${{ github.sha }}" .
+      - name: Smoke test
+        run: |
+          docker run -d --name api -p 8000:8000 -e API_KEY=ci-key "$IMAGE:${{ github.sha }}"
+          for i in $(seq 1 30); do curl -sf localhost:8000/ && break; sleep 2; done
+          curl -sf localhost:8000/ | grep -q '"status":"ok"'
+          # Index is baked in and the API key is enforced
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/ask -H 'Content-Type: application/json' -d '{"question":"x"}')" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/ask -H 'X-API-Key: ci-key' -H 'Content-Type: application/json' -d '{"question":" "}')" = 400
+          docker exec api python -c "from rag import get_retriever; print(len(get_retriever().search('total revenues 2023')))"
+      - name: Show logs on failure
+        if: failure()
+        run: docker logs api || true
+      - name: Publish to GitHub Container Registry
+        # Every push publishes :<commit-sha>; only main also moves :latest
+        if: github.event_name == 'push'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:${{ github.sha }}"
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            docker tag "$IMAGE:${{ github.sha }}" "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+          fi

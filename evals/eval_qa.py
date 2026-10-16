@@ -31,7 +31,8 @@ NUM_RE = re.compile(
 REFUSAL_PHRASES = ["not found", "not available", "not mentioned", "not provided", "not disclosed",
                    "don't have", "do not have", "cannot find", "can't find", "could not find", "couldn't find", "unable to",
                    "no information", "not in the", "does not contain", "doesn't contain",
-                   "not contain", "outside the scope", "i don't know"]
+                   "not contain", "outside the scope", "i don't know",
+                   "cannot be found", "cannot provide", "can't provide", "not able to provide"]
 
 
 def extract_numbers(text):
@@ -117,6 +118,7 @@ def main():
     ap.add_argument("--question-field", default="question", help="request JSON key for the question")
     ap.add_argument("--answer-field", default="answer", help="response key (dot path) for the answer")
     ap.add_argument("--sources-field", default="sources", help="response key (dot path) for sources, if any")
+    ap.add_argument("--api-key", default="", help="sent as the X-API-Key header (for a deployment with API_KEY set)")
     ap.add_argument("--timeout", type=float, default=120)
     ap.add_argument("--sleep", type=float, default=0,
                     help="seconds to wait between requests (avoids Gemini free-tier 429s)")
@@ -141,6 +143,7 @@ def main():
         sys.exit("No filled-in items to run. Fill in golden_set.jsonl first.")
 
     endpoints = dict(e.split("=", 1) for e in args.endpoint)
+    headers = {"X-API-Key": args.api_key} if args.api_key else {}
     out = Path(args.out); out.mkdir(exist_ok=True)
     rows, done = [], set()
     if args.resume and (out / "results.jsonl").exists():
@@ -170,7 +173,8 @@ def main():
                 t0 = time.perf_counter()
                 error = None
                 try:
-                    r = requests.post(url, json={args.question_field: item["question"]}, timeout=args.timeout)
+                    r = requests.post(url, json={args.question_field: item["question"]},
+                                      headers=headers, timeout=args.timeout)
                     if r.status_code >= 400:
                         try:
                             detail = r.json().get("detail", r.text)
