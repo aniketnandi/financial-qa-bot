@@ -31,7 +31,8 @@ NUM_RE = re.compile(
 REFUSAL_PHRASES = ["not found", "not available", "not mentioned", "not provided", "not disclosed",
                    "don't have", "do not have", "cannot find", "can't find", "could not find", "couldn't find", "unable to",
                    "no information", "not in the", "does not contain", "doesn't contain",
-                   "not contain", "outside the scope", "i don't know"]
+                   "not contain", "outside the scope", "i don't know",
+                   "cannot be found", "cannot provide", "can't provide", "not able to provide"]
 
 
 def extract_numbers(text):

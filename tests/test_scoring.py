@@ -24,3 +24,9 @@ def test_dollar_amounts_in_millions_and_billions():
 def test_refusal_detection():
     assert is_refusal("I could not find this information in the provided documents.")
     assert not is_refusal("Revenue was $96,773 million.")
+
+
+def test_refusal_detection_covers_agent_phrasings():
+    # Real gpt-4.1-mini agent answers to unanswerable questions (evals/results_azure_agent)
+    assert is_refusal("Therefore, I cannot provide the total revenue Tesla will report for 2025.")
+    assert is_refusal("The total revenue for Ford Motor Company in 2023 cannot be found in the retrieved financial data.")
